@@ -201,15 +201,41 @@ public:
     virtual frame_t* selectVictim() = 0; // virtual base class
 };
 Pager* THE_PAGER;
-int frameIndex;
+int frameHand;
 
 class FIFO:public Pager{
 public:
     frame_t* selectVictim(){
-        frame_t* f = frameTable[frameIndex];
-        frameIndex++;
-        if(frameIndex==frameTableSize) frameIndex=0;
+        frame_t* f = frameTable[frameHand];
+//        frameHand++;
+//        if(frameHand==frameTableSize) frameHand=0;
+        frameHand=(frameHand+1)%frameTableSize;
         return f;
+    }
+};
+
+class CLOCK:public Pager{
+public:
+    frame_t* selectVictim(){
+        // do this like fifo, just skip ptes with R bit set
+        frame_t* f = frameTable[frameHand];
+        Process proc=createdProcesses[f->pid];
+        pte_t* pte=proc.pageTable[f->pageNumber];
+        
+        while(pte->referenceBit){
+            pte->referenceBit=false;
+//            frameHand++;
+//            if(frameHand==frameTableSize) frameHand=0;
+            frameHand=(frameHand+1)%frameTableSize;
+            frame_t* newFrame = frameTable[frameHand];
+            Process newProc=createdProcesses[newFrame->pid];
+            pte=newProc.pageTable[newFrame->pageNumber];
+        }
+        
+        frame_t* finalFarme=frameTable[frameHand];
+        frameHand=(frameHand+1)%frameTableSize;
+        
+        return finalFarme;
     }
 };
 
@@ -556,11 +582,11 @@ int main(int argc, const char * argv[]) {
     createRandomArray(rfile);
     cout<<"rfile created"<<endl;
     char* inputFile = "/Users/asmitamitra/Desktop/Spring2023/OS/Lab3/lab3_assign/in11";
-    frameTableSize=16;
+    frameTableSize=32;
     frameTable = new frame_t*[frameTableSize];
     initialize(inputFile, frameTableSize);
     //cout<<"size of my pte_t is "<<sizeof(pte_t)<<endl;
-    THE_PAGER=new FIFO();
+    THE_PAGER=new CLOCK();
     Simulation();
     printPageTable();
     printFrameTable();
