@@ -17,7 +17,7 @@
 using namespace std;
 
 std::vector<int> randomValues;
-int ofs=1;
+int ofs=0;
 ifstream file;
 const int PTESize=64;
 enum counts {UNMAP=0, MAP=1, IN=2, OUT=3, FIN=4, FOUT=5, ZERO=6, SEGV=7, SEGP=8};
@@ -36,7 +36,6 @@ void createRandomArray(char* fileName){
     randomValues.erase(randomValues.begin()); //erase first element which just contains size of the file
     //cout<<randomValues.size()<<endl;
 }
-int myrandom(int burst) { return  randomValues.at(ofs++%(randomValues.size()-1)) ; }
 
 class vma{
     int beginVPage, endVPage, writeProtected, fileMapped;
@@ -240,6 +239,18 @@ public:
 };
 
 
+class RANDOM:public Pager{
+public:
+    frame_t* selectVictim(){
+        frameHand=(myrandom());
+        frame_t* f = frameTable[frameHand % frameTableSize];
+        return f;
+    }
+    
+    int myrandom() {
+    return randomValues.at(ofs++%(randomValues.size())); }
+};
+
 frame_t *get_frame() {
     frame_t *frame = allocateFromFreeList();
     if (frame == NULL) frame = THE_PAGER->selectVictim();
@@ -277,6 +288,7 @@ void Simulation(){
                     }
                 }
                 if(segv){
+                    cout<<" SEGV"<<endl;
                     currentProc.countStats[SEGV]++;
                     cost+=440;
                     createdProcesses.at(currentProc.getPID())=currentProc;
@@ -308,7 +320,7 @@ void Simulation(){
                         pte_t* o_pte = oldProc.pageTable[newframe->pageNumber];
                         
                         //UNMAP 0:14
-                        cout<<"UNMAP "<<newframe->pid<<":"<<newframe->pageNumber<<endl;
+                        cout<<" UNMAP "<<newframe->pid<<":"<<newframe->pageNumber<<endl;
                         oldProc.countStats[UNMAP]++;
                         cost+=410;
                         
@@ -317,12 +329,12 @@ void Simulation(){
                             if(o_pte->fileMappedBit){
                                 oldProc.countStats[FOUT]++;
                                 cost+=2800;
-                                cout<<"FOUT"<<endl;
+                                cout<<" FOUT"<<endl;
                             }
                             else{
                                 oldProc.countStats[OUT]++;
                                 cost+=2750;
-                                cout<<"OUT"<<endl;
+                                cout<<" OUT"<<endl;
                             }
                         }
                         
@@ -346,21 +358,21 @@ void Simulation(){
                         //ZERO
                         //MAP 3
                     if(pte->fileMappedBit){
-                        cout<<"FIN\n";
+                        cout<<" FIN\n";
                         currentProc.countStats[FIN]++;
                         cost+=2350;
                     }
                     else if(!pte->pagedOutBit){
-                        cout<<"ZERO\n";
+                        cout<<" ZERO\n";
                         currentProc.countStats[ZERO]++;
                         cost+=150;
                     }
                     else {
-                        cout<<"IN\n";
+                        cout<<" IN\n";
                         currentProc.countStats[IN]++;
                         cost+=3200;
                     }
-                        cout<<"MAP "<<newframe->frameNumber<<endl;
+                        cout<<" MAP "<<newframe->frameNumber<<endl;
                         currentProc.countStats[MAP]++;
                         cost+=350;
                         createdProcesses[newframe->pid]=currentProc;
@@ -381,6 +393,7 @@ void Simulation(){
                     }
                 }
                 if(segv){
+                    cout<<" SEGV"<<endl;
                     currentProc.countStats[SEGV]++;
                     cost+=440;
                     createdProcesses.at(currentProc.getPID())=currentProc;
@@ -408,7 +421,7 @@ void Simulation(){
                         pte->modifyBit=false;
                         cost+=410;
                         currentProc.countStats[SEGP]++;
-                        cout<<"SEGPROT"<<endl;
+                        cout<<" SEGPROT"<<endl;
                     }
                     currentProc.pageTable[page] = pte;
                     createdProcesses[currentProc.getPID()]=currentProc;
@@ -421,7 +434,7 @@ void Simulation(){
                         pte_t* o_pte = oldProc.pageTable[newframe->pageNumber];
                         
                         //UNMAP 0:14
-                        cout<<"UNMAP "<<newframe->pid<<":"<<newframe->pageNumber<<endl;
+                        cout<<" UNMAP "<<newframe->pid<<":"<<newframe->pageNumber<<endl;
                         oldProc.countStats[UNMAP]++;
                         cost+=410;
                         
@@ -430,12 +443,12 @@ void Simulation(){
                             if(o_pte->fileMappedBit){
                                 oldProc.countStats[FOUT]++;
                                 cost+=2800;
-                                cout<<"FOUT"<<endl;
+                                cout<<" FOUT"<<endl;
                             }
                             else{
                                 oldProc.countStats[OUT]++;
                                 cost+=2750;
-                                cout<<"OUT"<<endl;
+                                cout<<" OUT"<<endl;
                             }
                         }
                         
@@ -457,29 +470,29 @@ void Simulation(){
                         pte->frameNo=newframe->frameNumber;
                         
                         if(pte->fileMappedBit){
-                            cout<<"FIN\n";
+                            cout<<" FIN\n";
                             currentProc.countStats[FIN]++;
                             cost+=2350;
                         }
                         else if(!pte->pagedOutBit){
-                            cout<<"ZERO\n";
+                            cout<<" ZERO\n";
                             currentProc.countStats[ZERO]++;
                             cost+=150;
                         }
                         else {
-                            cout<<"IN\n";
+                            cout<<" IN\n";
                             currentProc.countStats[IN]++;
                             cost+=3200;
                         }
                     
-                        cout<<"MAP "<<newframe->frameNumber<<endl;
+                        cout<<" MAP "<<newframe->frameNumber<<endl;
                         currentProc.countStats[MAP]++;
                         cost+=350;
                         if(pte->writeProtectBit){
                             pte->modifyBit=false;
                             cost+=410;
                             currentProc.countStats[SEGP]++;
-                            cout<<"SEGPROT"<<endl;
+                            cout<<" SEGPROT"<<endl;
                         }
                         currentProc.pageTable[page] = pte;
                         createdProcesses[newframe->pid]=currentProc;
@@ -496,11 +509,11 @@ void Simulation(){
                 for (int j = 0; j<currentProc.getVMAList().size();j++){
                     for (int k = currentProc.getVMAList().at(j).getBeginPage(); k<=currentProc.getVMAList().at(j).getEndPage(); k++){
                         
-                        if (currentProc.pageTable[k]->validBit) {
+                        if (currentProc.pageTable[k]->validBit) {// unmap thing
                             currentProc.pageTable[k]->validBit=false;
                             currentProc.countStats[UNMAP]++;
                             cost+= 410;
-                            cout<<"UNMAP "<<currentProc.getPID()<< ":"<<i<<endl;
+                            cout<<" UNMAP "<<currentProc.getPID()<< ":"<<k<<endl;
                             if (currentProc.pageTable[k]->modifyBit && currentProc.pageTable[k]->fileMappedBit==true) {
                                 currentProc.countStats[FOUT]++;
                                 cost+=2800;
@@ -510,6 +523,7 @@ void Simulation(){
                             freeList.push_back(frameTable[currentProc.pageTable[k]->frameNo]);
                         }
                         currentProc.pageTable[k]->pagedOutBit=false;
+                        createdProcesses.at(currentProc.getPID())=currentProc;
                     }
 
                 }
@@ -526,7 +540,7 @@ void printPageTable(){
         for(int j=0;j<PTESize;j++){
             pte_t* pte=createdProcesses.at(i).pageTable[j];
             if(pte->validBit==false){
-                if(pte->modifyBit) cout<<" #";
+                if(pte->pagedOutBit) cout<<" #";
                 else cout<<" *";
             }
             else{
@@ -586,7 +600,7 @@ int main(int argc, const char * argv[]) {
     frameTable = new frame_t*[frameTableSize];
     initialize(inputFile, frameTableSize);
     //cout<<"size of my pte_t is "<<sizeof(pte_t)<<endl;
-    THE_PAGER=new CLOCK();
+    THE_PAGER=new RANDOM();
     Simulation();
     printPageTable();
     printFrameTable();
