@@ -13,13 +13,16 @@
 #include <string.h>
 #include <istream>
 #include <sstream>
+#include "math.h"
 
 using namespace std;
 
 std::vector<int> randomValues;
 int ofs=0;
 ifstream file;
+int instructionIndex;
 const int PTESize=64;
+const int tau=49;
 enum counts {UNMAP=0, MAP=1, IN=2, OUT=3, FIN=4, FOUT=5, ZERO=6, SEGV=7, SEGP=8};
 
 void createRandomArray(char* fileName){
@@ -114,6 +117,7 @@ typedef struct {
     unsigned int pid;
     unsigned int frameNumber, pageNumber=-1;
     bool isVacant=true;
+    unsigned age=0;
 } frame_t;
 
 
@@ -251,6 +255,84 @@ public:
     return randomValues.at(ofs++%(randomValues.size())); }
 };
 
+class AGING: public Pager{
+public:
+    frame_t* selectVictim() {
+        int ptr=frameHand, finalFramePtr=frameHand;
+        
+        // left shift all frametable entries
+        for(int i=0;i<frameTableSize;i++){
+            frameTable[i]->age = frameTable[i]->age/2;
+        }
+        ptr=frameHand;
+        
+        // reference bit merge and final frame pointer chosen
+        for(int i=0;i<frameTableSize;i++){
+            pte_t* pte = createdProcesses.at(frameTable[ptr]->pid).pageTable[frameTable[ptr]->pageNumber];
+            if(pte->referenceBit==true) frameTable[ptr]->age=frameTable[ptr]->age | 0x80000000;
+            if(frameTable[ptr]->age < frameTable[finalFramePtr]->age) finalFramePtr=ptr;
+            ptr++;
+            if(ptr==frameTableSize) ptr=0;
+        }
+        
+        frameHand=(finalFramePtr+1)%frameTableSize;
+
+        for (int i = 0; i < frameTableSize; i++){
+            createdProcesses[frameTable[i]->pid].pageTable[frameTable[i]->pageNumber]->referenceBit = false;
+        }
+        return frameTable[finalFramePtr];
+    }
+};
+
+class NRU:public Pager{
+    int lastTime=0;
+public:
+    frame_t * selectVictim(){
+        
+        int inst=instructionIndex-lastTime+1;
+        int ptr=frameHand;
+        int class0=-1,class1=-1,class2=-1,class3=-1;
+        
+        pte_t * pte;
+        for(int i=0;i<frameTableSize;i++){
+            pte = createdProcesses.at(frameTable[ptr]->pid).pageTable[frameTable[ptr]->pageNumber];
+            if(pte->referenceBit && pte->modifyBit==false && class2==-1) class2=ptr;
+            else if(pte->referenceBit && pte->modifyBit && class3==-1) class3=ptr;
+            else if(pte->referenceBit==false){
+                if(pte->modifyBit && class1==-1) class1=ptr;
+                else if(pte->modifyBit==false){
+                    if(inst<=tau){
+                        frameHand=(ptr+1)%frameTableSize;
+                        return frameTable[ptr];
+                    }
+                    else{
+                        class0=ptr;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if(inst>tau){
+            for(int k=0;k<frameTableSize;k++){
+                createdProcesses.at(frameTable[k]->pid).pageTable[frameTable[k]->pageNumber]->referenceBit=false;
+            }
+            lastTime++;
+        }
+        
+        int temp;
+        if (class3 != -1) temp = class3;
+        if (class2 != -1) temp = class2;
+        if (class1 != -1) temp = class1;
+        if (class0 != -1) temp = class0;
+        frameHand = (temp+1) % frameTableSize;
+        return frameTable[temp];
+    }
+    
+    //proc_arr[frametable[i]->proc_no].page_table[frametable[i]->page_index]->referenced = 0;
+};
+
+
 frame_t *get_frame() {
     frame_t *frame = allocateFromFreeList();
     if (frame == NULL) frame = THE_PAGER->selectVictim();
@@ -262,13 +344,13 @@ unsigned long long cost=0;
 void Simulation(){
     
     Process currentProc;
-    
-    for(int i=0;i<instructions.size();i++ ){
-        InstructionPair inst = instructions.at(i);
+    /// for NRU
+    for(instructionIndex=0;instructionIndex<instructions.size();instructionIndex++ ){
+        InstructionPair inst = instructions.at(instructionIndex);
         char operation = inst.getType();
         unsigned int page = inst.getInd();
         //cout<<"iteration"<<i<<"\toperation : "<<operation<<"\t page : "<<page<<endl;
-        cout<<i<<": ==> "<<operation<<" "<<page<<endl;
+        cout<<instructionIndex<<": ==> "<<operation<<" "<<page<<endl;
         switch(operation){
             case 'c': {
                 ctx_switches++;
@@ -347,6 +429,7 @@ void Simulation(){
                     
                         newframe->isVacant=false;
                         newframe->pageNumber=page;
+                        newframe->age=0;
                         newframe->pid=currentProc.getPID();
                         frameTable[newframe->frameNumber]=newframe;
                     
@@ -461,6 +544,7 @@ void Simulation(){
                         
                         newframe->isVacant=false;
                         newframe->pageNumber=page;
+                        newframe->age=0;
                         newframe->pid=currentProc.getPID();
                         frameTable[newframe->frameNumber]=newframe;
                     
@@ -600,7 +684,7 @@ int main(int argc, const char * argv[]) {
     frameTable = new frame_t*[frameTableSize];
     initialize(inputFile, frameTableSize);
     //cout<<"size of my pte_t is "<<sizeof(pte_t)<<endl;
-    THE_PAGER=new RANDOM();
+    THE_PAGER=new NRU();
     Simulation();
     printPageTable();
     printFrameTable();
