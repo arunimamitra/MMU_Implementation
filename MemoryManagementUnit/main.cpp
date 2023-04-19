@@ -118,6 +118,7 @@ typedef struct {
     unsigned int frameNumber, pageNumber=-1;
     bool isVacant=true;
     unsigned age=0;
+    unsigned long tau;
 } frame_t;
 
 
@@ -180,9 +181,6 @@ void initialize(char* fileName, int frameTableSize){
         }
     }
     
-//    for(int i=0;i<instructions.size();i++){
-//        cout<<instructions.at(i).getType()<<"\t"<<instructions.at(i).getInd()<<endl;
-//    }
     
     for(int i=0;i<frameTableSize;i++){
         frame_t* f=new frame_t;
@@ -311,13 +309,14 @@ public:
                     }
                 }
             }
+            ptr=(ptr+1)%frameTableSize;
         }
         
         if(inst>tau){
             for(int k=0;k<frameTableSize;k++){
                 createdProcesses.at(frameTable[k]->pid).pageTable[frameTable[k]->pageNumber]->referenceBit=false;
             }
-            lastTime++;
+            lastTime=instructionIndex+1;
         }
         
         int temp;
@@ -429,6 +428,7 @@ void Simulation(){
                     
                         newframe->isVacant=false;
                         newframe->pageNumber=page;
+                        newframe->tau=instructionIndex;
                         newframe->age=0;
                         newframe->pid=currentProc.getPID();
                         frameTable[newframe->frameNumber]=newframe;
@@ -545,6 +545,7 @@ void Simulation(){
                         newframe->isVacant=false;
                         newframe->pageNumber=page;
                         newframe->age=0;
+                        newframe->tau=instructionIndex;
                         newframe->pid=currentProc.getPID();
                         frameTable[newframe->frameNumber]=newframe;
                     
