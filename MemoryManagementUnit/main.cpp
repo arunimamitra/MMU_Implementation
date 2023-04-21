@@ -327,8 +327,80 @@ public:
         frameHand = (temp+1) % frameTableSize;
         return frameTable[temp];
     }
-    
     //proc_arr[frametable[i]->proc_no].page_table[frametable[i]->page_index]->referenced = 0;
+};
+
+class WSET:public Pager{
+public:
+    frame_t* selectVictim(){
+        int ptr=frameHand,temp=-1,oldF=-1,old2=-1,reset=0;
+        int max=0,small1=0,small2=0;
+        for(int i=0;i<frameTableSize;i++){
+            pte_t* pte=createdProcesses.at(frameTable[ptr]->pid).pageTable[frameTable[ptr]->pageNumber];
+            if(pte->referenceBit){
+                reset++;
+                if(oldF==-1){
+                    small1=frameTable[ptr]->tau;
+                    oldF=ptr;
+                }
+            }
+            else if(instructionIndex>tau+frameTable[ptr]->tau){
+                temp=ptr;
+                max=i;
+                break;
+            }
+            else if(instructionIndex<=tau+frameTable[ptr]->tau && old2==-1){
+                old2=ptr;
+                small2=frameTable[ptr]->tau;
+            }
+            ptr=(ptr+1)%frameTableSize;
+        }
+        
+        
+        ptr=frameHand;
+        
+        if(temp==-1){
+            if(reset==frameTableSize){
+                for (int i = 0; i < frameTableSize; i++) {
+                    createdProcesses.at(frameTable[ptr]->pid).pageTable[frameTable[ptr]->pageNumber]->referenceBit=false;
+                    if(reset==frameTableSize) frameTable[ptr]->tau=instructionIndex;
+                    if(frameTable[ptr]->tau<small1){
+                        oldF=ptr;
+                        small1=frameTable[ptr]->tau;
+                    }
+                    ptr=(ptr+1)%frameTableSize;
+                }
+                temp = oldF;
+            }
+            else {
+                for (int i = 0;i<frameTableSize; i++) { //reset the referenced frames
+                    pte_t* pte = createdProcesses.at(frameTable[ptr]->pid).pageTable[frameTable[ptr]->pageNumber];
+                    if (pte->referenceBit) {
+                        frameTable[ptr]->tau = instructionIndex;
+                        pte->referenceBit=false;
+                    }
+                    else if (!pte->referenceBit && frameTable[ptr]->tau<small2) {
+                        old2=ptr;
+                        small2 = frameTable[ptr]->tau;
+                    }
+                    ptr=(ptr+1)%frameTableSize;
+                }
+                temp=old2;
+            }
+        }
+        else{
+            for (int i = 0; i<max; i++) {
+                pte_t* pte = createdProcesses.at(frameTable[ptr]->pid).pageTable[frameTable[ptr]->pageNumber];
+                if (reset<= frameTableSize && pte->referenceBit) {
+                    frameTable[ptr]->tau = instructionIndex;
+                    pte->referenceBit = false;
+                }
+                ptr=(ptr+1)%frameTableSize;
+            }
+        }
+        frameHand=(temp+1)%frameTableSize;
+        return frameTable[temp];
+    }
 };
 
 
@@ -666,7 +738,6 @@ void printCountStats(){
     
 }
 
-//maps=350, unmaps=410, ins=3200, outs=2750, fins=2350, fouts=2800, zeros=150, segv=440, segprot=410
 void printCostStats(){
     
     cost =
@@ -685,7 +756,7 @@ int main(int argc, const char * argv[]) {
     frameTable = new frame_t*[frameTableSize];
     initialize(inputFile, frameTableSize);
     //cout<<"size of my pte_t is "<<sizeof(pte_t)<<endl;
-    THE_PAGER=new NRU();
+    THE_PAGER=new WSET();
     Simulation();
     printPageTable();
     printFrameTable();
