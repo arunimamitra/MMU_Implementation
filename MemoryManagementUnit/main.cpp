@@ -100,9 +100,14 @@ public:
     void setValues(int a, int b){
         pid=a;
         vmaCount=b;
-        for(int i=0;i<PTESize;i++) pageTable[i]=new pte_t;
+        for(int i=0;i<PTESize;i++) {
+            pageTable[i]=new pte_t;
+            pageTable[i]->modifyBit=false;
+            pageTable[i]->pagedOutBit=false;
+            pageTable[i]->validBit=false;
+            pageTable[i]->referenceBit=false;
+        }
         for(int i=0;i<9;i++) countStats[i]=0;
-        //for(int i=0;i<9;i++) cout<<i<<" "<<countStats[i];
     }
     int* getCountStats(){ return countStats; }
     void addToVMAList( vma v) { vmaList.push_back(v);
@@ -111,9 +116,19 @@ public:
                 pageTable[i]->writeProtectBit=true;
             }
         }
+        else{
+            for(int i=v.getBeginPage();i<=v.getEndPage();i++){
+                pageTable[i]->writeProtectBit=false;
+            }
+        }
         if(v.isFileMapped()==1){
             for(int i=v.getBeginPage();i<=v.getEndPage();i++){
                 pageTable[i]->fileMappedBit=true;
+            }
+        }
+        else{
+            for(int i=v.getBeginPage();i<=v.getEndPage();i++){
+                pageTable[i]->fileMappedBit=false;
             }
         }
     }
@@ -330,22 +345,6 @@ public:
                 class3=ptr;
             }
             
-            
-//            if(pte->referenceBit && pte->modifyBit==false && class2==-1) class2=ptr;
-//            else if(pte->referenceBit && pte->modifyBit && class3==-1) class3=ptr;
-//            else if(pte->referenceBit==false){
-//                if(pte->modifyBit && class1==-1) class1=ptr;
-//                else if(pte->modifyBit==false){
-//                    if(inst<=tau){
-//                        frameHand=(ptr+1)%frameTableSize;
-//                        return frameTable[ptr];
-//                    }
-//                    else{
-//                        class0=ptr;
-//                        break;
-//                    }
-//                }
-//            }
             ptr=(ptr+1)%frameTableSize;
         }
         
@@ -374,6 +373,7 @@ public:
         int max=0,small1=0,small2=0;
         for(int i=0;i<frameTableSize;i++){
             pte_t* pte=createdProcesses.at(frameTable[ptr]->pid).pageTable[frameTable[ptr]->pageNumber];
+            int diff =instructionIndex-frameTable[ptr]->tau;
             if(pte->referenceBit){
                 reset++;
                 if(oldF==-1){
@@ -381,19 +381,20 @@ public:
                     oldF=ptr;
                 }
             }
-            else if(instructionIndex-frameTable[ptr]->tau>tau){
+            
+            else if(diff>tau){
                 temp=ptr;
                 max=i;
                 break;
             }
-            else if(instructionIndex<=tau+frameTable[ptr]->tau && old2==-1){
+            else if(diff<=tau && old2==-1){
                 old2=ptr;
                 small2=frameTable[ptr]->tau;
             }
+            
+            // increment hand
             ptr=(ptr+1)%frameTableSize;
         }
-        
-        
         ptr=frameHand;
         
         if(temp==-1){
@@ -426,6 +427,7 @@ public:
             }
         }
         else{
+            // resetting
             for (int i = 0; i<max; i++) {
                 pte_t* pte = createdProcesses.at(frameTable[ptr]->pid).pageTable[frameTable[ptr]->pageNumber];
                 if (reset<= frameTableSize && pte->referenceBit) {
@@ -486,26 +488,19 @@ void Simulation(){
                     continue;
                 }
                 
-                //check if the vma already present in frame table
-                bool flag=false;
-                int frameInd;
-                for(frameInd=0;frameInd<frameTableSize;frameInd++){
-                    if(frameTable[frameInd]->pageNumber==page && frameTable[frameInd]->pid == currentProc.getPID()){
-                        //cout<<frameTable[frameInd]->pageNumber<<"found"<<endl;
-                        flag=true;
-                        break;
-                    }
-                }
                 
-                pte->validBit=true;
-                pte->referenceBit=true;
-                if(flag) {
-                    pte->frameNo=frameInd;
-                    currentProc.pageTable[page] = pte;
+                //check if the vma already present in frame table
+                
+                if(pte->validBit){
+                    pte->referenceBit=true;
+                    currentProc.pageTable[page]=pte;
+                    createdProcesses.at(currentProc.getPID())=currentProc;
                     break;
                 }
                 else{
                     frame_t *newframe = get_frame();
+                    pte->validBit=true;
+                    pte->referenceBit=true;
                     if(!newframe->isVacant){
                         Process oldProc=createdProcesses[newframe->pid];
                         pte_t* o_pte = oldProc.pageTable[newframe->pageNumber];
@@ -516,7 +511,7 @@ void Simulation(){
                         cost+=410;
                         
                         if(o_pte->modifyBit==true){
-                            
+                            o_pte->modifyBit=false;
                             if(o_pte->fileMappedBit){
                                 oldProc.countStats[FOUT]++;
                                 cost+=2800;
@@ -529,8 +524,7 @@ void Simulation(){
                                 cout<<" OUT"<<"\n";
                             }
                         }
-                        o_pte->modifyBit=false;
-                        o_pte->referenceBit=false;
+                        //o_pte->referenceBit=false;
                         o_pte->validBit=false;
                         oldProc.pageTable[newframe->pageNumber] = o_pte;
                         createdProcesses[newframe->pid]=oldProc;
@@ -547,7 +541,6 @@ void Simulation(){
                         pte=currentProc.pageTable[page];
                     
                         pte->frameNo=newframe->frameNumber;
-                        currentProc.pageTable[page] = pte;
                         //ZERO
                         //MAP 3
                     if(pte->fileMappedBit){
@@ -569,6 +562,7 @@ void Simulation(){
                         cout<<" MAP "<<newframe->frameNumber<<"\n";
                         currentProc.countStats[MAP]++;
                         cost+=350;
+                        currentProc.pageTable[page] = pte;
                         createdProcesses[newframe->pid]=currentProc;
                         break;
                 }
@@ -596,35 +590,27 @@ void Simulation(){
                     continue;
                 }
                 //check if the vma already present in frame table
-                bool flag=false;
-                int frameInd;
-                for(frameInd=0;frameInd<frameTableSize;frameInd++){
-                    if(frameTable[frameInd]->pageNumber==page && frameTable[frameInd]->pid == currentProc.getPID()){
-                        flag=true;
-                        break;
+
+                if(pte->validBit){
+                    pte->referenceBit=true;
+                    currentProc.pageTable[page]=pte;
+                    createdProcesses.at(currentProc.getPID())=currentProc;
+                    if(pte->writeProtectBit==false){
+                        pte->modifyBit=true;
                     }
-                }
-                //pte_t* pte= currentProc.pageTable[page];
-                pte->validBit=true;
-                pte->referenceBit=true;
-                //pte->modifyBit=true;
-                
-                if(flag) {
-                    pte->frameNo=frameInd;
-                    // check if segprot when frame is already present(and read)
-                    if(pte->writeProtectBit){
-                        //pte->modifyBit=false;
+                    else{
                         cost+=410;
                         currentProc.countStats[SEGP]++;
                         cout<<" SEGPROT"<<"\n";
                     }
-                    else pte->modifyBit=true;
-                    currentProc.pageTable[page] = pte;
+                    currentProc.pageTable[page]=pte;
                     createdProcesses[currentProc.getPID()]=currentProc;
                     break;
                 }
                 else{
                     frame_t *newframe = get_frame();
+                    pte->validBit=true;
+                    pte->referenceBit=true;
                     if(!newframe->isVacant){
                         Process oldProc=createdProcesses[newframe->pid];
                         pte_t* o_pte = oldProc.pageTable[newframe->pageNumber];
@@ -635,7 +621,7 @@ void Simulation(){
                         cost+=410;
                         
                         if(o_pte->modifyBit==true){
-                            
+                            o_pte->modifyBit=false;
                             if(o_pte->fileMappedBit){
                                 oldProc.countStats[FOUT]++;
                                 cost+=2800;
@@ -648,8 +634,7 @@ void Simulation(){
                                 cout<<" OUT"<<"\n";
                             }
                         }
-                        o_pte->modifyBit=false;
-                        o_pte->referenceBit=false;
+                        //o_pte->referenceBit=false;
                         o_pte->validBit=false;
                         oldProc.pageTable[newframe->pageNumber] = o_pte;
                         createdProcesses[newframe->pid]=oldProc;
@@ -664,7 +649,6 @@ void Simulation(){
                     
                         currentProc = createdProcesses.at(newframe->pid);
                         pte=currentProc.pageTable[page];
-                    
                         pte->frameNo=newframe->frameNumber;
                         
                         if(pte->fileMappedBit){
@@ -693,6 +677,7 @@ void Simulation(){
                             cout<<" SEGPROT"<<"\n";
                         }
                         else pte->modifyBit=true;
+                    
                         currentProc.pageTable[page] = pte;
                         createdProcesses[newframe->pid]=currentProc;
                 
@@ -891,4 +876,3 @@ int main(int argc, char ** argv) {
     return 0;
     
 }
-
